@@ -5,7 +5,7 @@ class FieldtypeSketchyDate extends Fieldtype implements Module {
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Sketchy Date',
-			'version' => '0.0.3',
+			'version' => '0.0.4',
 			'summary' => 'Field that stores an imprecise date, i.e. either full date, year and month, or year only',
 			'installs' => ['InputfieldSketchyDate']
 		);
@@ -106,30 +106,30 @@ class FieldtypeSketchyDate extends Fieldtype implements Module {
 			if(in_array($operator, ['%=', '^='])) {
 				// Textual substring query
 				$value = $operator === '^=' ? "$value%" : "%$value%";
-				$query->where("$table.$subfield LIKE ?", $value);
+				$query->where("$table.$subfield LIKE :searchdate", ['searchdate' => $value]);
 			} else {
-				$query->where("$table.$subfield$operator?", $value);
+				$query->where("$table.$subfield$operator:searchdate", ['searchdate' => $value]);
 			}
 		} else {
 			// Partial date to match
 			if(in_array($operator, ['%=', '^='])) {		
 				// Textual substring query
 				$value = $operator === '^=' ? "$value%" : "%$value%";
-				$query->where("$table.$subfield LIKE ?", $value);
+				$query->where("$table.$subfield LIKE :searchdate", ['searchdate' => $value]);
 			} else {
 				if($operator == '>=' || $operator == '<') {
 					$value = str_pad($value, 8, '0', \STR_PAD_RIGHT);
-					$query->where("$table.$subfield$operator?", $value);
+					$query->where("$table.$subfield$operator:searchdate", ['searchdate' => $value]);
 				} else if($operator == '<=' || $operator == '>') {
 					if(strlen($value === 4))
 						$value = $value . '1231';
 					else
 						$value = $value . '31';
-					$query->where("$table.$subfield$operator?", $value);
+					$query->where("$table.$subfield$operator:searchdate", ['searchdate' => $value]);
 				} else if($operator === '=') {
 					$valueFrom = str_pad($value, 8, '0', \STR_PAD_RIGHT);
 					$valueTo = strlen($value) === 4 ? $value . '1231' : $value . '31';
-					$query->where("$table.$subfield between ? and ?", [$valueFrom, $valueTo]);
+					$query->where("$table.$subfield between :from and :to", ['from' => $valueFrom, 'to' => $valueTo]);
 				}
 			}
 		}
