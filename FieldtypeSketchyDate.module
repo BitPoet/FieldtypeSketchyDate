@@ -1,0 +1,213 @@
+<?php namespace ProcessWire;
+
+class FieldtypeSketchyDate extends Fieldtype implements Module {
+	
+	public static function getModuleInfo() {
+		return array(
+			'title' => 'Sketchy Date',
+			'version' => '0.0.3',
+			'summary' => 'Field that stores an imprecise date, i.e. either full date, year and month, or year only',
+			'installs' => ['InputfieldSketchyDate']
+		);
+	}
+
+
+	public function init() {
+		parent::init();
+		
+		$this->set('separatorCharOut', '/');
+	}
+
+
+	/**
+	 * Format the value for output, according to selected format and language
+	 * 
+	 * @param Page $page
+	 * @param Field $field
+	 * @param int $value
+	 * @return string
+	 *
+	 */
+	public function ___formatValue(Page $page, Field $field, $value) {
+		$renderValue = '';
+		$separatorChar = $this->separatorCharOut;
+		if(strlen($value) > 0 && substr($value, 0, 4) !== '0000') {
+			$renderValue .= substr($value, 0, 4);
+			if(strlen($value) > 4 && substr($value, 4, 2) !== '00') {
+				$renderValue .= $separatorChar . substr($value, 4, 2);
+				if(strlen($value) > 6 && substr($value, 6, 2) !== '00') {
+					$renderValue .= $separatorChar . substr($value, 6, 2);
+				}
+			}
+		}
+		return $renderValue;
+	}
+
+	/**
+	 * Get selector info
+	 * 
+	 * @param Field $field
+	 * @param array $data
+	 * @return array
+	 * 
+	 */
+	public function ___getSelectorInfo(Field $field, array $data = array()) {
+		$a = parent::___getSelectorInfo($field, $data); 
+		$a['operators'] = array('=', '!=', '>', '>=', '<', '<=', '%=', '^=', '=""', '!=""'); 
+		return $a;
+	}
+
+	/**
+	 * Return database schema used by this field
+	 * 
+	 * @param Field $field
+	 * @return array
+	 *
+	 */
+	public function getDatabaseSchema(Field $field) {
+		$schema = parent::getDatabaseSchema($field); 
+		$schema['data'] = 'varchar(8) NOT NULL DEFAULT \'00000000\'';
+		$schema['keys']['data'] = 'KEY data (data)'; 
+		return $schema;
+	}
+
+
+	/**
+	 * Match a sketchy date value in the database, as used by PageFinder
+	 * 
+	 * @param PageFinderDatabaseQuerySelect $query
+	 * @param string $table
+	 * @param string $subfield
+	 * @param string $operator
+	 * @param int|string $value
+	 * @return DatabaseQuerySelect
+	 * @throws WireException if given invalid operator
+	 *
+	 */
+	public function getMatchQuery($query, $table, $subfield, $operator, $value) {
+		
+		$this->log('getMatchQuery with operator=' . $operator .', value=' . $value);
+		
+		$database = $this->wire()->database;
+		$intValue = $this->_sanitizeValue($value);
+		$table = $database->escapeTable($table);
+		$subfield = $subfield ? $database->escapeCol($subfield) : 'data';
+
+		$value = str_replace(['/', '-'], '', $value);
+
+		if(!ctype_digit($value) || ! in_array(strlen($value), [4,6,8])) {
+			throw new WireException("Invalid sketchy date string. Must have 4, 6 or 8 digits");
+		}
+
+		$value = $this->_sanitizeValue($value);
+
+		if(strlen($value) === 8) {
+			// We have an exact date to match
+			if(in_array($operator, ['%=', '^='])) {
+				// Textual substring query
+				$value = $operator === '^=' ? "$value%" : "%$value%";
+				$query->where("$table.$subfield LIKE ?", $value);
+			} else {
+				$query->where("$table.$subfield$operator?", $value);
+			}
+		} else {
+			// Partial date to match
+			if(in_array($operator, ['%=', '^='])) {		
+				// Textual substring query
+				$value = $operator === '^=' ? "$value%" : "%$value%";
+				$query->where("$table.$subfield LIKE ?", $value);
+			} else {
+				if($operator == '>=' || $operator == '<') {
+					$value = str_pad($value, 8, '0', \STR_PAD_RIGHT);
+					$query->where("$table.$subfield$operator?", $value);
+				} else if($operator == '<=' || $operator == '>') {
+					if(strlen($value === 4))
+						$value = $value . '1231';
+					else
+						$value = $value . '31';
+					$query->where("$table.$subfield$operator?", $value);
+				} else if($operator === '=') {
+					$valueFrom = str_pad($value, 8, '0', \STR_PAD_RIGHT);
+					$valueTo = strlen($value) === 4 ? $value . '1231' : $value . '31';
+					$query->where("$table.$subfield between ? and ?", [$valueFrom, $valueTo]);
+				}
+			}
+		}
+
+		return $query; 
+
+	}
+
+	/**
+	 * Return the Inputfield used for sketchy dates (InputfieldSketchyDate)
+	 * 
+	 * @param Page $page
+	 * @param Field $field
+	 * @return InputfieldSketchyDate
+	 *
+	 */
+	public function getInputfield(Page $page, Field $field) {
+		/** @var InputfieldSketchyDate $inputfield */
+		$inputfield = $this->wire('modules')->get('InputfieldSketchyDate'); 
+		$inputfield->class = $this->className();
+		return $inputfield; 
+	}
+
+
+	/**
+	 * Sanitize value, per Fieldtype interface
+	 * 
+	 * @param Page $page
+	 * @param Field $field
+	 * @param string|int|\DateTime $value
+	 * @return int
+	 *	
+ 	 */
+	public function sanitizeValue(Page $page, Field $field, $value) {
+		return $this->_sanitizeValue($value); 
+	}
+
+	/**
+	 * Sanitize a value assumed to be a sketchy date
+	 * 
+	 * @param string|int|\DateTime
+	 * @return int|string Returns unix timestamp integer or blank string if empty or invalid value
+	 *
+	 */
+	protected function _sanitizeValue($value) {
+		if(empty($value)) {
+			// empty value
+			$value = '00000000';
+		} else if(is_int($value) || preg_match('/^[0-9]+$/', $value)) {
+			// value okay as-is
+		} else if(preg_match('~^\\d{4}([/-]\\d\\d([/-]\\d\\d)?)?$~', $value)) {
+			// sketchy date textual representation
+			$value = $this->toInteger($value);
+		} else {
+			$value = '00000000';
+		}
+		return $value; 
+	}
+
+	protected function toInteger($val) {
+		$val = str_replace(['-', '/'], '', $val);
+		if(strlen($val) < 8) {
+			$val = str_pad($val, 8, '0', \STR_PAD_RIGHT);
+		}
+		return $val;
+	}
+
+	public function ___getConfigInputfields(Field $field) {
+		$inputfields = parent::___getConfigInputfields($field);
+		$modules = $this->wire()->modules;
+	
+		$f = $modules->get('InputfieldText');
+		$f->attr('name', 'separatorCharOut');
+		$f->label = $this->_('Separator Char for Output');
+		$f->attr('value', $this->separatorCharOut);
+		$inputfields->append($f);
+		
+		return $inputfields;
+	}
+
+}

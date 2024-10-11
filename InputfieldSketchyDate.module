@@ -1,0 +1,68 @@
+<?php namespace ProcessWire;
+
+class InputfieldSketchyDate extends Inputfield {
+	
+	public static function getModuleInfo() {
+		return array(
+			'title' => 'Sketchy Date Input',
+			'version' => '0.0.3',
+			'summary' => 'Inputfield for imprecise dates, i.e. either full date, year and month, or year only'
+		);
+	}
+
+
+	/**
+	 * Module init
+	 * 
+	 */
+	public function init() {
+		parent::init();
+	
+		$this->setAttribute('type', 'text'); 
+		$this->setAttribute('size', 10); 
+
+		$this->set('separatorChar', '/');
+	}
+
+
+	public function ___render() {
+
+		$val = $this->value;
+		
+		$renderValue = '';
+		if(strlen($val) > 0 && substr($val, 0, 4) !== '0000') {
+			$renderValue .= substr($val, 0, 4);
+			if(strlen($val) > 4 && substr($val, 4, 2) !== '00') {
+				$renderValue .= $this->separatorChar . substr($val, 4, 2);
+				if(strlen($val) > 6 && substr($val, 6, 2) !== '00') {
+					$renderValue .= $this->separatorChar . substr($val, 6, 2);
+				}
+			}
+		}
+
+		$attrs = $this->getAttributes();
+
+		$attrs['value'] = $renderValue;
+		$sep = $this->separatorChar;
+		$attrs['pattern'] = '^([0-9]{4}(\\' . $sep . '[0-9]{2}(\\' . $sep . '[0-9]{2})?)?)?$';
+		
+		$out = "<input " . $this->getAttributesString($attrs) . " />";
+		
+		return $out; 
+	}
+
+
+	public function getConfigInputfields() {
+		$inputfields = parent::getConfigInputfields();
+		$modules = $this->wire()->modules;
+	
+		$f = $modules->get('InputfieldText');
+		$f->attr('name', 'separatorChar');
+		$f->label = $this->_('Separator Char for Input');
+		$f->attr('value', $this->separatorChar);
+		$inputfields->append($f);
+		
+		return $inputfields;
+	}
+
+}
